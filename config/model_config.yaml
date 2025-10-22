@@ -1,0 +1,9 @@
+
+model:
+  architecture: unet
+  encoder: resnet34
+  num_classes: 1
+
+inference:
+  tile_overlap: 32
+  threshold: 0.5

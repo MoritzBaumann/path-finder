@@ -1,0 +1,6 @@
+
+training:
+  batch_size: 8
+  epochs: 20
+  learning_rate: 1e-4
+  train_val_split: 0.2
