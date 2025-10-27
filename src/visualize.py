@@ -1,110 +1,179 @@
 # Geospatial imports
-from collections import defaultdict
-import geopandas as gpd
-import rasterio
-from rasterio.features import rasterize
-from rasterio.windows import Window
-from skimage.transform import resize
-from scipy.ndimage import binary_dilation
-import cv2
 
-# ML/Data handling imports
-from sklearn.model_selection import train_test_split
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
-import segmentation_models_pytorch as smp
-from torchmetrics.classification import BinaryJaccardIndex, BinaryF1Score, BinaryPrecision, BinaryRecall
-
-import os
 import matplotlib.pyplot as plt
-import glob
+from pathlib import Path
+import random
 
 
-# ========================================
-# STEP 11: PLOT TRAINING RESULTS
-# ========================================
-print("\nGenerating training plots...")
+def visualize_tiles(tile_dir: Path, num_tiles_to_visualize: int = 5):
+    """
+    Visualizes a sample of image and corresponding mask tiles in a single figure.
 
-fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-epochs_range = range(1, num_epochs + 1)
+    The function randomly selects a specified number of image tiles from the
+    given directory, loads the image and its associated mask, and plots them
+    side-by-side as subplots within a single, large figure.
 
-# Plot 1: Loss
-axes[0, 0].plot(epochs_range, history['train_loss'],
-                'b-o', label='Train Loss', linewidth=2)
-axes[0, 0].plot(epochs_range, history['val_loss'],
-                'r-o', label='Val Loss', linewidth=2)
-axes[0, 0].set_xlabel('Epoch', fontsize=12)
-axes[0, 0].set_ylabel('Loss', fontsize=12)
-axes[0, 0].set_title('Training and Validation Loss',
-                     fontsize=14, fontweight='bold')
-axes[0, 0].legend(fontsize=11)
-axes[0, 0].grid(True, alpha=0.3)
+    Args:
+        tile_dir (Path): The directory containing the image and mask tiles.
+                         Image files should contain '_img_' in their name
+                         and masks should contain '_mask_', and both should
+                         be loadable with numpy.load (e.g., .npy files).
+        num_tiles_to_visualize (int, optional): The number of image/mask pairs
+                                             to randomly select and visualize.
+                                             Defaults to 5.
 
-# Plot 2: IoU and F1 Score
-axes[0, 1].plot(epochs_range, history['val_iou'],
-                'g-o', label='IoU', linewidth=2)
-axes[0, 1].plot(epochs_range, history['val_f1'],
-                'm-o', label='F1 Score', linewidth=2)
-axes[0, 1].set_xlabel('Epoch', fontsize=12)
-axes[0, 1].set_ylabel('Score', fontsize=12)
-axes[0, 1].set_title('Validation IoU and F1 Score',
-                     fontsize=14, fontweight='bold')
-axes[0, 1].legend(fontsize=11)
-axes[0, 1].grid(True, alpha=0.3)
-axes[0, 1].set_ylim([0, 1])
+    Raises:
+        ValueError: If no image files are found in the specified directory.
+    """
+    # File Selection and Validation
+    img_files = sorted(tile_dir.glob("*_img_*"))
+    if not img_files:
+        raise ValueError(
+            f"No image files containing '_img_' found in {tile_dir}")
 
-# Plot 3: Precision and Recall
-axes[1, 0].plot(epochs_range, history['val_precision'],
-                'c-o', label='Precision', linewidth=2)
-axes[1, 0].plot(epochs_range, history['val_recall'], 'orange',
-                marker='o', label='Recall', linewidth=2)
-axes[1, 0].set_xlabel('Epoch', fontsize=12)
-axes[1, 0].set_ylabel('Score', fontsize=12)
-axes[1, 0].set_title('Validation Precision and Recall',
-                     fontsize=14, fontweight='bold')
-axes[1, 0].legend(fontsize=11)
-axes[1, 0].grid(True, alpha=0.3)
-axes[1, 0].set_ylim([0, 1])
+    # Randomly select the specified number of files
+    num_to_sample = min(num_tiles_to_visualize, len(img_files))
+    rnd_img_files = random.sample(img_files, num_to_sample)
 
-# Plot 4: Summary metrics table
-axes[1, 1].axis('off')
-summary_text = f"""
-Final Training Results (Epoch {num_epochs})
-{'='*40}
+    print(
+        f"\nVisualizing {num_to_sample} sample tiles from '{tile_dir.name}'...")
 
-Loss:
-  Train Loss:      {history['train_loss'][-1]:.4f}
-  Val Loss:        {history['val_loss'][-1]:.4f}
+    # Setup Single Figure for All Plots
+    # Each pair (img + mask) needs 2 columns.
+    n_rows = num_to_sample
+    n_cols = 2
+    # Determine the figure size dynamically for better visual balance
+    fig_width = 10
+    fig_height = 4 * n_rows
+    fig, axes = plt.subplots(
+        nrows=n_rows,
+        ncols=n_cols,
+        figsize=(fig_width, fig_height)
+    )
 
-Performance Metrics:
-  IoU:             {history['val_iou'][-1]:.4f}
-  F1 Score:        {history['val_f1'][-1]:.4f}
-  Precision:       {history['val_precision'][-1]:.4f}
-  Recall:          {history['val_recall'][-1]:.4f}
+    # Flatten axes array for easy indexing, especially if n_rows=1
+    if n_rows == 1:
+        axes = axes.reshape(1, n_cols)
 
-Best Performance:
-  Best IoU:        {max(history['val_iou']):.4f} (Epoch {history['val_iou'].index(max(history['val_iou']))+1})
-  Best F1:         {max(history['val_f1']):.4f} (Epoch {history['val_f1'].index(max(history['val_f1']))+1})
-  Best Val Loss:   {min(history['val_loss']):.4f} (Epoch {history['val_loss'].index(min(history['val_loss']))+1})
-"""
+    # Load and Plot Tiles
+    for i, img_filepath in enumerate(rnd_img_files):
+        try:
+            # Determine mask path and load data
+            mask_filepath = Path(str(img_filepath).replace("_img_", "_mask_"))
+            img = np.load(img_filepath)
+            mask = np.load(mask_filepath)
+        except Exception as e:
+            print(f"Skipping file {img_filepath.name} due to load error: {e}")
+            continue
 
-axes[1, 1].text(0.1, 0.5, summary_text,
-                fontsize=11,
-                family='monospace',
-                verticalalignment='center',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+        # Convert to (H, W, bands) for display if necessary (assuming channel-first)
+        if img.ndim == 3 and img.shape[0] < img.shape[-1]:
+            img = np.moveaxis(img, 0, -1)
 
-plt.tight_layout()
-plt.savefig('../training_results.png', dpi=300, bbox_inches='tight')
-plt.show()
+        # Plot Image
+        ax_img = axes[i, 0]
+        ax_img.imshow(img)
+        ax_img.set_title(f"Image: {img_filepath.name}", fontsize=10)
+        ax_img.axis("off")
 
-print("✓ Training plots saved to '../training_results.png'")
+        # Plot Mask
+        ax_mask = axes[i, 1]
+        ax_mask.imshow(mask, cmap="Reds")
+        ax_mask.set_title("Mask", fontsize=10)
+        ax_mask.axis("off")
+
+    # Final Display Cleanup
+    fig.suptitle(
+        f"Sample Visualization of {num_to_sample} Image/Mask Tile Pairs",
+        fontsize=16,
+        fontweight='bold',
+        y=1.00  # Adjust position for better title visibility
+    )
+    plt.tight_layout()
+    plt.show()
 
 
-# ========================================
-# STEP 12: MODEL ARCHITECTURE SUMMARY
-# ========================================
+def plot_training_results(history: dict, num_epochs: int):
+
+    print("\nGenerating training plots...")
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    epochs_range = range(1, num_epochs + 1)
+
+    # Plot 1: Loss
+    axes[0, 0].plot(epochs_range, history['train_loss'],
+                    'b-o', label='Train Loss', linewidth=2)
+    axes[0, 0].plot(epochs_range, history['val_loss'],
+                    'r-o', label='Val Loss', linewidth=2)
+    axes[0, 0].set_xlabel('Epoch', fontsize=12)
+    axes[0, 0].set_ylabel('Loss', fontsize=12)
+    axes[0, 0].set_title('Training and Validation Loss',
+                         fontsize=14, fontweight='bold')
+    axes[0, 0].legend(fontsize=11)
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Plot 2: IoU and F1 Score
+    axes[0, 1].plot(epochs_range, history['val_iou'],
+                    'g-o', label='IoU', linewidth=2)
+    axes[0, 1].plot(epochs_range, history['val_f1'],
+                    'm-o', label='F1 Score', linewidth=2)
+    axes[0, 1].set_xlabel('Epoch', fontsize=12)
+    axes[0, 1].set_ylabel('Score', fontsize=12)
+    axes[0, 1].set_title('Validation IoU and F1 Score',
+                         fontsize=14, fontweight='bold')
+    axes[0, 1].legend(fontsize=11)
+    axes[0, 1].grid(True, alpha=0.3)
+    axes[0, 1].set_ylim([0, 1])
+
+    # Plot 3: Precision and Recall
+    axes[1, 0].plot(epochs_range, history['val_precision'],
+                    'c-o', label='Precision', linewidth=2)
+    axes[1, 0].plot(epochs_range, history['val_recall'], 'orange',
+                    marker='o', label='Recall', linewidth=2)
+    axes[1, 0].set_xlabel('Epoch', fontsize=12)
+    axes[1, 0].set_ylabel('Score', fontsize=12)
+    axes[1, 0].set_title('Validation Precision and Recall',
+                         fontsize=14, fontweight='bold')
+    axes[1, 0].legend(fontsize=11)
+    axes[1, 0].grid(True, alpha=0.3)
+    axes[1, 0].set_ylim([0, 1])
+
+    # Plot 4: Summary metrics table
+    axes[1, 1].axis('off')
+    summary_text = f"""
+    Final Training Results (Epoch {num_epochs})
+    {'='*40}
+
+    Loss:
+      rain Loss:      {history['train_loss'][-1]:.4f}
+      Val Loss:        {history['val_loss'][-1]:.4f}
+
+    Performance Metrics:
+      IoU:             {history['val_iou'][-1]:.4f}
+      F1 Score:        {history['val_f1'][-1]:.4f}
+      Precision:       {history['val_precision'][-1]:.4f}
+      Recall:          {history['val_recall'][-1]:.4f}
+
+    Best Performance:
+      Best IoU:        {max(history['val_iou']):.4f} (Epoch {history['val_iou'].index(max(history['val_iou']))+1})
+      Best F1:         {max(history['val_f1']):.4f} (Epoch {history['val_f1'].index(max(history['val_f1']))+1})
+      Best Val Loss:   {min(history['val_loss']):.4f} (Epoch {history['val_loss'].index(min(history['val_loss']))+1})
+    """
+
+    axes[1, 1].text(0.1, 0.5, summary_text,
+                    fontsize=11,
+                    family='monospace',
+                    verticalalignment='center',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.3))
+
+    plt.tight_layout()
+    plt.savefig('../training_results.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    print("✓ Training plots saved to '../training_results.png'")
+
 
 def print_model_summary(model, optimizer, scheduler, device):
     """
@@ -190,17 +259,3 @@ def print_model_summary(model, optimizer, scheduler, device):
         f"  Mixed Precision:       {'Enabled' if torch.cuda.is_available() else 'Disabled'}")
 
     print("\n" + "="*70 + "\n")
-
-
-# Call the function after setting up your model
-print_model_summary(model, optimizer, scheduler, device)
-
-# Optional: Save summary to text file for easy reference
-with open('../model_summary.txt', 'w') as f:
-    import sys
-    old_stdout = sys.stdout
-    sys.stdout = f
-    print_model_summary(model, optimizer, scheduler, device)
-    sys.stdout = old_stdout
-
-print("✓ Model summary saved to '../model_summary.txt'")

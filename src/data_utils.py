@@ -28,6 +28,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+import torch
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
+
+
+# ============================================================
+# Raw Data Preparation
+# ============================================================
+
 
 def load_labels(labels_path: Path) -> gpd.GeoDataFrame:
     """Load vector path labels from GeoPackage files and combine into a single GeoDataFrame."""
@@ -321,89 +330,53 @@ def process_geotiffs_to_tiles(
     }
 
 
-def visualize_tiles(tile_dir: Path, num_tiles_to_visualize: int = 5):
-    """
-    Visualizes a sample of image and corresponding mask tiles in a single figure.
+# ============================================================
+# Preparation of Tiles for Model Learning
+# ============================================================
 
-    The function randomly selects a specified number of image tiles from the
-    given directory, loads the image and its associated mask, and plots them
-    side-by-side as subplots within a single, large figure.
 
-    Args:
-        tile_dir (Path): The directory containing the image and mask tiles.
-                         Image files should contain '_img_' in their name
-                         and masks should contain '_mask_', and both should
-                         be loadable with numpy.load (e.g., .npy files).
-        num_tiles_to_visualize (int, optional): The number of image/mask pairs
-                                             to randomly select and visualize.
-                                             Defaults to 5.
+class TileDataset(Dataset):
+    def __init__(self, img_paths, mask_paths, normalize=True, preload=True) -> None:
+        self.normalize = normalize
+        self.mean_rgb = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        self.std_rgb = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        self.preload = preload
 
-    Raises:
-        ValueError: If no image files are found in the specified directory.
-    """
-    # File Selection and Validation
-    img_files = sorted(tile_dir.glob("*_img_*"))
-    if not img_files:
-        raise ValueError(
-            f"No image files containing '_img_' found in {tile_dir}")
+        if preload:
+            self.images = [np.load(p) for p in img_paths]
+            self.masks = [np.load(p) for p in mask_paths]
+        else:
+            self.img_paths = img_paths
+            self.mask_paths = mask_paths
 
-    # Randomly select the specified number of files
-    num_to_sample = min(num_tiles_to_visualize, len(img_files))
-    rnd_img_files = random.sample(img_files, num_to_sample)
+    def __len__(self) -> int:
+        return len(self.images) if hasattr(self, "images") else len(self.img_paths)
 
-    print(
-        f"\nVisualizing {num_to_sample} sample tiles from '{tile_dir.name}'...")
+    def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor]:
+        img = self.images[idx] if hasattr(
+            self, "images") else np.load(self.img_paths[idx])
+        mask = self.masks[idx] if hasattr(
+            self, "masks") else np.load(self.mask_paths[idx])
 
-    # Setup Single Figure for All Plots
-    # Each pair (img + mask) needs 2 columns.
-    n_rows = num_to_sample
-    n_cols = 2
-    # Determine the figure size dynamically for better visual balance
-    fig_width = 10
-    fig_height = 4 * n_rows
-    fig, axes = plt.subplots(
-        nrows=n_rows,
-        ncols=n_cols,
-        figsize=(fig_width, fig_height)
+        img_tensor = torch.tensor(img, dtype=torch.float32) / 255.0
+        mask_tensor = torch.tensor(mask, dtype=torch.float32).unsqueeze(0)
+
+        if self.normalize:
+            img_tensor[:3] = (img_tensor[:3] - self.mean_rgb) / self.std_rgb
+        return img_tensor, mask_tensor
+
+
+def create_dataloaders(tile_dir: str, batch_size: int = 8, val_split: float = 0.2):
+    img_files = sorted(glob.glob(os.path.join(tile_dir, "*img_*.npy")))
+    mask_files = [f.replace("img_", "mask_") for f in img_files]
+
+    img_train, img_val, mask_train, mask_val = train_test_split(
+        img_files, mask_files, test_size=val_split, random_state=42
     )
 
-    # Flatten axes array for easy indexing, especially if n_rows=1
-    if n_rows == 1:
-        axes = axes.reshape(1, n_cols)
+    train_loader = DataLoader(TileDataset(
+        img_train, mask_train), batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(TileDataset(img_val, mask_val),
+                            batch_size=batch_size, shuffle=False)
 
-    # Load and Plot Tiles
-    for i, img_filepath in enumerate(rnd_img_files):
-        try:
-            # Determine mask path and load data
-            mask_filepath = Path(str(img_filepath).replace("_img_", "_mask_"))
-            img = np.load(img_filepath)
-            mask = np.load(mask_filepath)
-        except Exception as e:
-            print(f"Skipping file {img_filepath.name} due to load error: {e}")
-            continue
-
-        # Convert to (H, W, bands) for display if necessary (assuming channel-first)
-        if img.ndim == 3 and img.shape[0] < img.shape[-1]:
-            img = np.moveaxis(img, 0, -1)
-
-        # Plot Image
-        ax_img = axes[i, 0]
-        ax_img.imshow(img)
-        ax_img.set_title(f"Image: {img_filepath.name}", fontsize=10)
-        ax_img.axis("off")
-
-        # Plot Mask
-        ax_mask = axes[i, 1]
-        ax_mask.imshow(mask, cmap="Reds")
-        ax_mask.set_title("Mask", fontsize=10)
-        ax_mask.axis("off")
-
-    # Final Display Cleanup
-    fig.suptitle(
-        f"Sample Visualization of {num_to_sample} Image/Mask Tile Pairs",
-        fontsize=16,
-        fontweight='bold',
-        y=1.00  # Adjust position for better title visibility
-    )
-    plt.tight_layout()
-    plt.show()
+    return train_loader, val_loader

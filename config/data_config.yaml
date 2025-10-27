@@ -2,7 +2,7 @@ data:
   raw_geotiffs_dir: data/raw/geotiffs
   raw_labels_dir: data/labels
   interim_dir: data/interim
-  tile_dir: data/interim/tiles_8k_to_256p_distance_dilute
+  tile_dir: data/interim/tiles_8k_to_256p
   processed_dir: data/processed
 
 tiles:
