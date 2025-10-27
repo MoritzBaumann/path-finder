@@ -1,4 +1,4 @@
-data:
+directories:
   raw_geotiffs_dir: data/raw/geotiffs
   raw_labels_dir: data/labels
   interim_dir: data/interim
@@ -9,3 +9,9 @@ tiles:
   tile_size: 8192 # original image is split into tiles of this size
   target_size: 256 # larger tiles are downsampled to this size for model input
   path_pixel_dilation: 40 # make the path wider -> counters class imbalance, more realistic
+
+training:
+  batch_size: 8
+  val_split: 0.2
+  preload: true
+  normalize: true

@@ -1,6 +1,6 @@
 import yaml
 from pathlib import Path
-from src.data_utils import visualize_tiles
+from src.visualize import visualize_tiles
 
 if __name__ == "__main__":
     # Load configuration
@@ -8,6 +8,6 @@ if __name__ == "__main__":
     with open(config_path) as file:
         config = yaml.safe_load(file)
 
-    processed_tile_dir = Path(config["data"]["tile_dir"])
+    processed_tile_dir = Path(config["directories"]["tile_dir"])
 
     visualize_tiles(processed_tile_dir)

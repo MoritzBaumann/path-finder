@@ -8,9 +8,9 @@ if __name__ == "__main__":
     with open(config_path) as file:
         config = yaml.safe_load(file)
 
-    geotiff_dir = Path(config["data"]["raw_geotiffs_dir"])
-    label_dir = Path(config["data"]["raw_labels_dir"])
-    interim_dir = Path(config["data"]["interim_dir"])
+    geotiff_dir = Path(config["directories"]["raw_geotiffs_dir"])
+    label_dir = Path(config["directories"]["raw_labels_dir"])
+    interim_dir = Path(config["directories"]["interim_dir"])
 
     tile_size = config['tiles']['tile_size']
     target_size = config['tiles']['target_size']
