@@ -1,15 +1,11 @@
 data:
   raw_geotiffs_dir: data/raw/geotiffs
   raw_labels_dir: data/labels
+  interim_dir: data/interim
+  tile_dir: data/interim/tiles_8k_to_256p_distance_dilute
   processed_dir: data/processed
-  tiles_dir: data/interim/tiles
-  patch_size: 512 # size of patches to extract from geotiffs for processing
 
 tiles:
-  tile_size: 4096 # original image is split into tiles of this size
-  target_size: 256 # 4096 tiles are downsampled to this size for model input
+  tile_size: 8192 # original image is split into tiles of this size
+  target_size: 256 # larger tiles are downsampled to this size for model input
   path_pixel_dilation: 40 # make the path wider -> counters class imbalance, more realistic
-  augmentations:
-    - horizontal_flip
-    - vertical_flip
-    - rotation_90
