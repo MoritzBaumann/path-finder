@@ -5,7 +5,7 @@ Utilities for reading raster/vector data, rasterizing vector labels, creating
 tiles, and visualizing samples for coastal path detection preprocessing.
 
 Key features:
-- Use relatively large excerpts (4096x4096) of GeoTIFFs to preserve context
+- Use relatively large excerpts (e.g. 4096x4096) of GeoTIFFs to preserve context
 - Downsample to manageable size (256x256) for model training
 - Keep images and masks aligned through all processing steps
 - Use label dilation to thicken thin paths and decrease class imbalance
@@ -13,25 +13,20 @@ Key features:
 - Export image and mask tiles as NumPy arrays for downstream training
 """
 
-import geopandas as gpd
-import rasterio
-from rasterio.features import rasterize
-from rasterio.windows import Window
-import cv2
-
-import os
 import glob
+import os
 from pathlib import Path
-import random
 
+import cv2
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
+import rasterio
 import torch
-from torch.utils.data import Dataset, DataLoader
+from rasterio.features import rasterize
+from rasterio.windows import Window
 from sklearn.model_selection import train_test_split
-
+from torch.utils.data import DataLoader, Dataset
 
 # ============================================================
 # Raw Data Preparation
@@ -50,19 +45,21 @@ def load_labels(labels_path: Path) -> gpd.GeoDataFrame:
     for label in labels_list:
         gdf = gpd.read_file(label)
         labels.append(gdf)
-    labels_gdf = gpd.GeoDataFrame(pd.concat(
-        [gdf for gdf in labels], ignore_index=True))
+    labels_gdf = gpd.GeoDataFrame(pd.concat([gdf for gdf in labels], ignore_index=True))
     print(
-        f"✓ Loaded {len(labels_list)} path features and combined into one GeoDataFrame")
+        f"✓ Loaded {len(labels_list)} path features and combined into one GeoDataFrame"
+    )
 
     return labels_gdf
 
 
-def rasterize_labels_for_tiff(labels_gdf: gpd.GeoDataFrame, tiff_path: Path) -> np.ndarray:
+def rasterize_labels_for_tiff(
+    labels_gdf: gpd.GeoDataFrame, tiff_path: Path
+) -> np.ndarray:
     """
     Rasterize vector path labels to match a specific GeoTIFF's spatial extent and resolution.
 
-    Creates a binary mask where paths are 1 and background is 0, aligned to the 
+    Creates a binary mask where paths are 1 and background is 0, aligned to the
     GeoTIFF's coordinate system, dimensions, and transform.
 
     Args:
@@ -77,27 +74,28 @@ def rasterize_labels_for_tiff(labels_gdf: gpd.GeoDataFrame, tiff_path: Path) -> 
             tiff_metadata = src.meta.copy()
 
             print(
-                f"  📐 Raster: {tiff_metadata['width']}W × {tiff_metadata['height']}H pixels")
+                f"  📐 Raster: {tiff_metadata['width']}W × {tiff_metadata['height']}H pixels"
+            )
             print(f"  🗺️  CRS: {tiff_metadata['crs']}")
             print(f"  🖊️  Rasterizing {len(labels_gdf)} path geometries...")
 
             shapes = ((geom, 1) for geom in labels_gdf.geometry)
             label_mask = rasterize(
                 shapes=shapes,
-                out_shape=(tiff_metadata['height'], tiff_metadata['width']),
-                transform=tiff_metadata['transform'],
+                out_shape=(tiff_metadata["height"], tiff_metadata["width"]),
+                transform=tiff_metadata["transform"],
                 fill=0,
-                dtype='uint8'
+                dtype="uint8",
             )
 
             path_pixels = np.sum(label_mask)
             coverage_pct = (path_pixels / label_mask.size) * 100
             print(
-                f"  ✓ Mask: {label_mask.shape}, {path_pixels:,} path pixels ({coverage_pct:.2f}% coverage)")
+                f"  ✓ Mask: {label_mask.shape}, {path_pixels:,} path pixels ({coverage_pct:.2f}% coverage)"
+            )
 
     except Exception as e:
-        raise ValueError(
-            f"Failed to rasterize labels for {tiff_path.name}: {str(e)}")
+        raise ValueError(f"Failed to rasterize labels for {tiff_path.name}: {str(e)}")
 
     return label_mask
 
@@ -124,37 +122,33 @@ def dilate_path_pixels(mask: np.ndarray, pixel_dilation: int) -> np.ndarray:
         print("  ⊘ No dilation applied")
         return mask
 
-    print(f"  🛤 Broadening path using distance-based dilation...")
+    print("  🛤 Broadening path using distance-based dilation...")
     # Compute Euclidean distance from each background pixel to nearest foreground pixel
-    dist = cv2.distanceTransform(
-        1 - mask, distanceType=cv2.DIST_L2, maskSize=5)
+    dist = cv2.distanceTransform(1 - mask, distanceType=cv2.DIST_L2, maskSize=5)
     # Pixels within radius `pixel_dilation` of a path become 1
     mask_dilated = (dist <= pixel_dilation).astype(np.uint8)
-    print(
-        f"  ✅ Dilated paths: {pixel_dilation}px radius using distance transform")
+    print(f"  ✅ Dilated paths: {pixel_dilation}px radius using distance transform")
     return mask_dilated
 
 
 def downscale_image_tile(img_tile: np.ndarray, target_size: int) -> np.ndarray:
     """Downscale multi-band image tile using bilinear interpolation."""
-    img_downscaled = np.zeros(
-        (3, target_size, target_size), dtype=img_tile.dtype
-    )
+    img_downscaled = np.zeros((3, target_size, target_size), dtype=img_tile.dtype)
     for band in range(3):
         img_downscaled[band] = cv2.resize(
-            img_tile[band],
-            (target_size, target_size),
-            interpolation=cv2.INTER_LINEAR
+            img_tile[band], (target_size, target_size), interpolation=cv2.INTER_LINEAR
         )
     return img_downscaled
 
 
-def downscale_mask_tile(mask_tile: np.ndarray, target_size: int, threshold: float = 0.3) -> np.ndarray:
+def downscale_mask_tile(
+    mask_tile: np.ndarray, target_size: int, threshold: float = 0.3
+) -> np.ndarray:
     """Downscale binary mask using bilinear interpolation with thresholding to preserve paths."""
     mask_downscaled = cv2.resize(
         mask_tile.astype(np.float32),
         (target_size, target_size),
-        interpolation=cv2.INTER_LINEAR
+        interpolation=cv2.INTER_LINEAR,
     )
     mask_downscaled = (mask_downscaled > threshold).astype(np.uint8)
     return mask_downscaled
@@ -166,7 +160,7 @@ def extract_and_save_tiles(
     tile_size: int,
     target_size: int,
     tile_dir: Path,
-    file_prefix: str = "tile"
+    file_prefix: str = "tile",
 ) -> int:
     """
     Extract non-overlapping tiles from GeoTIFF and aligned mask, downscale, and save.
@@ -193,21 +187,27 @@ def extract_and_save_tiles(
         img_width, img_height = src.width, src.height
 
         print(
-            f"  📊 Source: {img_width}W × {img_height}H, {src.count} bands, CRS={src.crs}")
+            f"  📊 Source: {img_width}W × {img_height}H, {src.count} bands, CRS={src.crs}"
+        )
         print(
-            f"  ✂️  Extracting {tile_size}×{tile_size} tiles → downscaling to {target_size}×{target_size}")
+            f"  ✂️  Extracting {tile_size}×{tile_size} tiles → downscaling to {target_size}×{target_size}"
+        )
 
         tile_count = 0
 
         for col in range(0, img_width, tile_size):
             for row in range(0, img_height, tile_size):
                 # Define extraction window
-                window = Window(col_off=col, row_off=row,  # type: ignore
-                                width=tile_size, height=tile_size)  # type: ignore
+                window = Window(
+                    col_off=col,  # type: ignore
+                    row_off=row,  # type: ignore
+                    width=tile_size,  # type: ignore
+                    height=tile_size,  # type: ignore
+                )
 
                 # Extract aligned image and mask tiles
                 img_tile = src.read([1, 2, 3], window=window)  # RGB only
-                mask_tile = mask[row:row + tile_size, col:col + tile_size]
+                mask_tile = mask[row : row + tile_size, col : col + tile_size]
 
                 # Skip incomplete tiles at boundaries
                 if img_tile.shape != (3, tile_size, tile_size):
@@ -220,10 +220,10 @@ def extract_and_save_tiles(
                 mask_downscaled = downscale_mask_tile(mask_tile, target_size)
 
                 # Save as numpy arrays
-                np.save(tile_dir /
-                        f"{file_prefix}_img_{col}_{row}.npy", img_downscaled)
-                np.save(tile_dir /
-                        f"{file_prefix}_mask_{col}_{row}.npy", mask_downscaled)
+                np.save(tile_dir / f"{file_prefix}_img_{col}_{row}.npy", img_downscaled)
+                np.save(
+                    tile_dir / f"{file_prefix}_mask_{col}_{row}.npy", mask_downscaled
+                )
 
                 tile_count += 1
 
@@ -238,7 +238,7 @@ def process_geotiffs_to_tiles(
     output_dir: Path,
     tile_size: int,
     target_size: int,
-    path_pixel_dilation: int
+    path_pixel_dilation: int,
 ) -> dict:
     """
     Process all GeoTIFF files into training tiles with aligned masks.
@@ -267,12 +267,12 @@ def process_geotiffs_to_tiles(
     labels_gdf = load_labels(labels_path)
 
     tiff_files = sorted(glob.glob(os.path.join(geotiffs_path, "*.tif")))
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Found {len(tiff_files)} GeoTIFF files to process")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Create output directory
-    tile_dir = output_dir / f"tiles_{tile_size//1000}k_to_{target_size}p"
+    tile_dir = output_dir / f"tiles_{tile_size // 1000}k_to_{target_size}p"
     tile_dir.mkdir(parents=True, exist_ok=True)
 
     total_tiles = 0
@@ -282,10 +282,10 @@ def process_geotiffs_to_tiles(
     for tiff_idx, tiff_path in enumerate(tiff_files):
         tiff_name = os.path.basename(tiff_path)
         print(f"\n[{tiff_idx + 1}/{len(tiff_files)}] Processing {tiff_name}")
-        print(f"{'-'*60}")
+        print(f"{'-' * 60}")
 
         # Generate unique prefix for this TIFF's tiles
-        file_prefix = f"tiff{tiff_idx+1:02d}"
+        file_prefix = f"tiff{tiff_idx + 1:02d}"
 
         try:
             # Step 1: Rasterize labels for this specific TIFF
@@ -301,7 +301,7 @@ def process_geotiffs_to_tiles(
                 tile_size=tile_size,
                 target_size=target_size,
                 tile_dir=tile_dir,
-                file_prefix=file_prefix
+                file_prefix=file_prefix,
             )
 
             total_tiles += tile_count
@@ -313,20 +313,20 @@ def process_geotiffs_to_tiles(
             continue
 
     # Summary
-    print(f"\n{'='*60}")
-    print(f"✓ PROCESSING COMPLETE")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print("✓ PROCESSING COMPLETE")
+    print(f"{'=' * 60}")
     print(f"  Processed: {processed_count}/{len(tiff_files)} GeoTIFFs")
     print(f"  Failed: {failed_count}")
     print(f"  Total tiles created: {total_tiles:,}")
     print(f"  Output directory: {output_dir}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     return {
-        'total_tiles': total_tiles,
-        'processed_tiffs': processed_count,
-        'failed_tiffs': failed_count,
-        'tile_dir': tile_dir
+        "total_tiles": total_tiles,
+        "processed_tiffs": processed_count,
+        "failed_tiffs": failed_count,
+        "tile_dir": tile_dir,
     }
 
 
@@ -353,20 +353,25 @@ class TileDataset(Dataset):
         return len(self.images) if hasattr(self, "images") else len(self.img_paths)
 
     def __getitem__(self, idx) -> tuple[torch.Tensor, torch.Tensor]:
-        img = self.images[idx] if hasattr(
-            self, "images") else np.load(self.img_paths[idx])
-        mask = self.masks[idx] if hasattr(
-            self, "masks") else np.load(self.mask_paths[idx])
+        img = (
+            self.images[idx]
+            if hasattr(self, "images")
+            else np.load(self.img_paths[idx])
+        )
+        mask = (
+            self.masks[idx] if hasattr(self, "masks") else np.load(self.mask_paths[idx])
+        )
 
         img_tensor = torch.tensor(img, dtype=torch.float32) / 255.0
         mask_tensor = torch.tensor(mask, dtype=torch.float32).unsqueeze(0)
 
         if self.normalize:
             img_tensor[:3] = (img_tensor[:3] - self.mean_rgb) / self.std_rgb
+
         return img_tensor, mask_tensor
 
 
-def create_dataloaders(tile_dir: str, batch_size: int = 8, val_split: float = 0.2):
+def create_dataloaders(tile_dir: Path, batch_size: int = 8, val_split: float = 0.2):
     img_files = sorted(glob.glob(os.path.join(tile_dir, "*img_*.npy")))
     mask_files = [f.replace("img_", "mask_") for f in img_files]
 
@@ -374,9 +379,11 @@ def create_dataloaders(tile_dir: str, batch_size: int = 8, val_split: float = 0.
         img_files, mask_files, test_size=val_split, random_state=42
     )
 
-    train_loader = DataLoader(TileDataset(
-        img_train, mask_train), batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(TileDataset(img_val, mask_val),
-                            batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(
+        TileDataset(img_train, mask_train), batch_size=batch_size, shuffle=True
+    )
+    val_loader = DataLoader(
+        TileDataset(img_val, mask_val), batch_size=batch_size, shuffle=False
+    )
 
     return train_loader, val_loader
