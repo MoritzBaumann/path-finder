@@ -1,3 +1,5 @@
+from typing import Callable
+
 import segmentation_models_pytorch as smp
 import torch
 from torchmetrics.classification import (
@@ -29,15 +31,17 @@ def create_model(encoder: str, weights: str | None, in_channels: int = 3):
     return model
 
 
-def get_losses():
+def get_losses() -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     """Return a loss function for binary segmentation.
 
-    Combines Dice loss and Focal loss (from smp) to stabilize training.
+    Loss functions are instantiated once and captured via closure.
+    Combines Dice loss and Focal loss (from segmentation_models_pytorch)
+    to stabilize training. Expects logits as predictions and binary {0,1} targets.
     """
     dice_loss = smp.losses.DiceLoss(mode="binary")
     focal_loss = smp.losses.FocalLoss(mode="binary", alpha=0.25, gamma=2.0)
 
-    def combined_loss(preds, targets):
+    def combined_loss(preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # preds: logits, targets: binary {0,1}
         return dice_loss(preds, targets) + focal_loss(preds, targets)
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from src.train import create_model_name_and_path, train_model
+from src.train import save_model_and_history_to_disk, train_model
 
 if __name__ == "__main__":
     # Load configurations
@@ -28,22 +28,23 @@ if __name__ == "__main__":
     encoder_weights = model_config["encoder_weights"]
     in_channels = model_config["in_channels"]
 
-    _, model_save_path = create_model_name_and_path(
-        model_type,
-        encoder_name,
-        dataset_name,
-        num_epochs,
-        batch_size,
-        learning_rate,
-        output_dir,
-        encoder_weights,
-    )
-    train_model(
+    model, history = train_model(
         tile_dir,
         batch_size,
         num_epochs,
         learning_rate,
         encoder_name,
         encoder_weights,
-        model_save_path,
+    )
+
+    save_model_and_history_to_disk(
+        model,
+        history,
+        output_dir,
+        model_type,
+        encoder_name,
+        dataset_name,
+        num_epochs,
+        batch_size,
+        learning_rate,
     )
