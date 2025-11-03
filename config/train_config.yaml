@@ -9,4 +9,5 @@ training:
   num_epochs: 20
   learning_rate: 0.0005
   device: "auto"
-  output_dir: "outputs/training_results"
+  model_output_dir: "outputs/training_results"
+  plots_output_dir: "outputs/training_plots"

@@ -232,5 +232,6 @@ def train_model(
         )
 
     print(f"\n✓ Training complete! ({epochs} epochs)")
+    print("To visualize results, run: python scripts/03_visualize.py")
 
     return model, history

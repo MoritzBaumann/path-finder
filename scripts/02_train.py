@@ -21,7 +21,7 @@ if __name__ == "__main__":
     batch_size = train_config["data_loading"]["batch_size"]
     num_epochs = train_config["training"]["num_epochs"]
     learning_rate = train_config["training"]["learning_rate"]
-    output_dir = Path(train_config["training"]["output_dir"])
+    output_dir = Path(train_config["training"]["model_output_dir"])
 
     model_type = model_config["model_type"]
     encoder_name = model_config["encoder_name"]
@@ -47,4 +47,5 @@ if __name__ == "__main__":
         num_epochs,
         batch_size,
         learning_rate,
+        encoder_weights,
     )
