@@ -29,7 +29,7 @@
 
 The goal of this project is to create a mapping tool for coastal hiking paths. A pretrained image learning model (UNet) is used to identify coastline paths from geospatial imagery.
 
-The underlying idea is to use this tool to keep mapping apps up to date and thereby increase hikers' safety along coastal pathways. It originates from Yohan Cobac, who initiated this project during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html).
+The underlying idea is to use this tool to keep mapping apps up to date and thereby increase hikers' safety along coastal pathways. It originates from Yohan Cobac and Laura Dréan, who initiated this project during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html).
 
 The centerpiece of the project is a pipeline consisting of 5 different steps:
 - `01_preprocess`: During preprocessing images are tiled and downscaled and hiking paths (labels) are rasterized.
@@ -97,6 +97,6 @@ Project Link: [https://github.com/MoritzBaumann/path-finder](https://github.com/
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
 
-This project was started during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html), and the initial idea came from Yohan Cobac.
+This project was started during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html), and the initial idea came from Yohan Cobac and Laura Dréan.
 
 * License: [MIT License](https://choosealicense.com/licenses/mit/)
