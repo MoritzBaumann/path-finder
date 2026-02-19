@@ -1,33 +1,56 @@
 # Path-Finder — Coastal Path Detection
 
-Purpose
-- Create a model to identify coastline paths from geospatial imagery to help keep mapping apps up to date and increase hikers' safety.
+A PyTorch-based pipeline for detecting coastline paths from geospatial (GeoTIFF) imagery. The goal is to produce pixel-wise segmentation masks that help keep mapping applications up to date and improve hiker safety.
 
-Project overview
-- PyTorch-based pipeline for preprocessing geotiffs, training segmentation models, running inference, and visualizing predicted coastline/path masks.
-- Designed for tiled GeoTIFF input and mask outputs.
+## Features
 
-Key goals
-- Detect coastline/path features in aerial/satellite imagery.
-- Produce pixel-wise masks usable by mapping pipelines or downstream vectorization.
-- Provide tools to preprocess large rasters into tiles, build datasets, train/infer models, and visualize results.
+- Preprocessing of large GeoTIFF rasters into tiles
+- Dataset building for segmentation tasks
+- Model training and inference with PyTorch
+- Visualization of predicted coastline/path masks
 
-Repository layout
-... to be added ...
+## Project Structure
+```
+path-finder/
+├── config/        # Configuration files
+├── notebooks/     # Exploratory and analysis notebooks
+├── scripts/       # Standalone scripts (preprocessing, inference, etc.)
+├── src/           # Core source code
+├── pyproject.toml
+└── uv.lock
+```
 
+## Requirements
 
-Quick start (development)
-1. System requirements
-   - macOS or Linux (development tested on macOS)
-   - Python >=3.13
-   - GPU recommended for training
+- Python >= 3.13
+- macOS or Linux
+- GPU recommended for training
 
-2. Install dependencies (example with uv)
-   uv sync
-   -> or install core packages manually using pip:
-   pip install torch rasterio ...
+## Installation
 
-3. Prepare data
-   - ...
+Using [uv](https://github.com/astral-sh/uv) (recommended):
+```bash
+uv sync
+```
 
-...
+Or with pip:
+```bash
+pip install torch rasterio
+```
+
+## Usage
+
+1. **Prepare data** — Place your GeoTIFF files in the appropriate data directory and run the preprocessing script to tile them.
+2. **Train** — Use the training script or notebook to train a segmentation model on the prepared tiles.
+3. **Infer** — Run inference on new imagery to produce path/coastline masks.
+4. **Visualize** — Use the visualization tools to inspect predicted masks against the source imagery.
+
+> Detailed usage instructions will be added as the project matures.
+
+## License
+
+[MIT](LICENSE)
+
+## Acknowledgements
+
+This project was started during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html), and the initial idea came from Yohan Cobac and Laura Dréan.

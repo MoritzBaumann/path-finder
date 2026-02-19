@@ -15,6 +15,7 @@ env/
 .idea/
 
 # Jupyter
+*.ipynb
 .ipynb_checkpoints
 
 # Data and outputs (keep out of git)

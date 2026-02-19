@@ -1,6 +1,13 @@
+data_loading:
+  dataset_name: "tiles-8k"
+  batch_size: 8
+  val_split: 0.2
+  preload: true
+  normalize: true
 
 training:
-  batch_size: 8
-  epochs: 20
-  learning_rate: 1e-4
-  train_val_split: 0.2
+  num_epochs: 20
+  learning_rate: 0.0005
+  device: "auto"
+  model_output_dir: "outputs/training_results"
+  plots_output_dir: "outputs/training_plots"

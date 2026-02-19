@@ -1,162 +1,237 @@
-# Geospatial imports
-from collections import defaultdict
-import geopandas as gpd
-import rasterio
-from rasterio.features import rasterize
-from rasterio.windows import Window
-from skimage.transform import resize
-from scipy.ndimage import binary_dilation
-import cv2
+from datetime import datetime
+from pathlib import Path
 
-# ML/Data handling imports
-from sklearn.model_selection import train_test_split
-import numpy as np
-import torch
-from torch.utils.data import Dataset, DataLoader
 import segmentation_models_pytorch as smp
-from torchmetrics.classification import BinaryJaccardIndex, BinaryF1Score, BinaryPrecision, BinaryRecall
+import torch
+import yaml
+from tqdm import tqdm
 
-import os
-import matplotlib.pyplot as plt
-import glob
-
-
-# ========================================
-# STEP 9: MODEL SETUP
-# ========================================
-print("\nSetting up model...")
-
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Using device: {device}")
-
-model = smp.Unet(
-    encoder_name="efficientnet-b0",  # or resnet34 -> more power, slower
-    encoder_weights="imagenet",
-    in_channels=4,
-    classes=1,
-    activation=None
-).to(device)
-
-# Loss functions (Solution 1: Weighted/Focal Loss)
-dice_loss = smp.losses.DiceLoss(mode="binary")
-focal_loss = smp.losses.FocalLoss(mode="binary", alpha=0.25, gamma=2.0)
-
-
-def combined_loss(preds, targets):
-    return dice_loss(preds, targets) + focal_loss(preds, targets)
-
-
-print("Using Dice + Focal Loss to handle class imbalance")
-
-
-# Optimizer & Learning Rate
-optimizer = torch.optim.Adam(model.parameters(), lr=5e-4)
-
-# Metrics
-iou_metric = BinaryJaccardIndex(threshold=0.5).to(device)
-f1_metric = BinaryF1Score(threshold=0.5).to(device)
-precision_metric = BinaryPrecision(threshold=0.5).to(device)
-recall_metric = BinaryRecall(threshold=0.5).to(device)
-
-# Learning rate scheduler (optional)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-    optimizer, mode='min', factor=0.5, patience=2
+from src.data_utils import create_dataloaders
+from src.model_utils import (
+    create_model,
+    get_losses,
+    get_metrics,
+    get_optimizer,
+    get_scheduler,
 )
 
 
-# ========================================
-# STEP 10: TRAINING LOOP
-# ========================================
-print("\nStarting training...")
+def save_model_and_history_to_disk(
+    model: smp.Unet,
+    history: dict,
+    output_dir: Path,
+    model_type: str,
+    encoder_name: str,
+    dataset_name: str,
+    num_epochs: int,
+    batch_size: int,
+    lr: float,
+    encoder_weights: str = "random",
+) -> None:
+    """Save trained model state dict and training history to disk.
 
-num_epochs = 20
+    1. Model state dict (.pth) - learnable parameters (weights and biases)
+    2. Training history (.yaml) - loss and metric values across epochs
 
-# Initialize tracking lists
-history = {
-    'train_loss': [],
-    'val_loss': [],
-    'val_iou': [],
-    'val_f1': [],
-    'val_precision': [],
-    'val_recall': []
-}
+    Both files are saved with timestamped filenames that include hyperparameter metadata and
+    architecture details needed for easy identification and reproducibility.
 
-for epoch in range(num_epochs):
-    print(f"\nEpoch [{epoch+1}/{num_epochs}]")
+    Args:
+        model: Trained segmentation model (e.g., U-Net with specified encoder).
+        history: Dictionary containing training metrics per epoch. Expected keys:
+            'train_loss', 'val_loss', 'val_iou', 'val_f1', 'val_precision', 'val_recall'.
+        output_dir: Directory path where model artifacts will be saved.
+        model_type: Model architecture type (e.g., 'unet', 'fpn').
+        encoder_name: Name of the encoder backbone (e.g., 'resnet34', 'efficientnet-b0').
+        dataset_name: Name/identifier of the training dataset.
+        num_epochs: Total number of training epochs completed.
+        batch_size: Batch size used during training.
+        lr: Learning rate used for optimization.
+        encoder_weights: Pretrained weights used for encoder initialization
+            (e.g., 'imagenet'). Defaults to "random" for random initialization.
 
-    # ---- TRAIN ----
-    model.train()
-    train_loss = 0.0
+    Returns:
+        None. Files are written to disk at the specified output_dir.
+    """
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    for images, masks in train_loader:
-        images, masks = images.to(device), masks.to(device)
+    # Create formatted strings for filenames
+    lr_str = f"{lr:.0e}".replace("+0", "")  # e.g., '1e-4'
+    date_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-        preds = model(images)
-        loss = combined_loss(preds, masks)
+    base_name = f"{date_str}_{model_type}_{encoder_name}_{encoder_weights}_{dataset_name}_ep{num_epochs}_lr{lr_str}_bs{batch_size}"
 
-        optimizer.zero_grad()
-        loss.backward()
+    model_name = f"{base_name}.pth"
+    history_name = f"{base_name}_history.yaml"
 
-        # Add gradient clipping to prevent instability
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    # Save model state dict
+    torch.save(model.state_dict(), output_dir / model_name)
 
-        optimizer.step()
+    # Save training history
+    with open(output_dir / history_name, "w") as f:
+        yaml.dump(history, f, default_flow_style=False)
 
-        train_loss += loss.item() * images.size(0)
+    print(f"\n✓ Model artifacts saved to {output_dir}")
+    print(f"  • Model state dict: {model_name}")
+    print(f"  • Training history: {history_name}")
 
-    train_loss /= len(train_loader.dataset)
 
-    # ---- VALIDATION ----
-    model.eval()
-    val_loss, val_iou, val_f1, val_precision, val_recall = 0.0, 0.0, 0.0, 0.0, 0.0
+def train_model(
+    tile_dir: Path,
+    batch_size: int,
+    epochs: int,
+    lr: float,
+    encoder: str,
+    weights: str,
+) -> tuple[smp.Unet, dict]:
+    """Train a binary segmentation model using U-Net architecture.
 
-    with torch.no_grad():
-        for images, masks in val_loader:
+    This function implements a complete training loop with validation, including:
+    - Data loading from preprocessed tiles
+    - Model training with backpropagation
+    - Validation with multiple metrics (IoU, F1, precision, recall)
+    - Learning rate scheduling based on validation loss
+    - Progress tracking with tqdm
+
+    Args:
+        tile_dir: Path to directory containing preprocessed image tiles stored as .npy files.
+            Expected structure: separate subdirectories or naming convention for train/val splits.
+        batch_size: Number of samples per batch for both training and validation dataloaders.
+        epochs: Total number of training epochs to run.
+        lr: Initial learning rate for the optimizer.
+        encoder: Name of the encoder backbone architecture (e.g., 'resnet34', 'efficientnet-b0').
+            Must be compatible with segmentation_models_pytorch.
+        weights: Pretrained weight specification for encoder initialization.
+            Use 'imagenet' for ImageNet pretrained weights, or None for random initialization.
+
+    Returns:
+        A tuple containing:
+        - model (smp.Unet): Trained segmentation model on CPU/GPU depending on availability.
+        - history (dict): Training history with keys 'train_loss', 'val_loss', 'val_iou',
+            'val_f1', 'val_precision', 'val_recall'. Each key maps to a list of values per epoch.
+
+    Notes:
+        - Automatically detects and uses CUDA if available, otherwise falls back to CPU.
+        - Uses binary cross-entropy loss for training.
+        - Applies sigmoid activation + 0.5 threshold for binary predictions during validation.
+        - Learning rate scheduler reduces LR when validation loss plateaus.
+    """
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+
+    # Initialize training components
+    train_loader, val_loader = create_dataloaders(tile_dir, batch_size)
+    model = create_model(encoder, weights).to(device)
+    loss_fn = get_losses()
+    optimizer = get_optimizer(model, lr)
+    scheduler = get_scheduler(optimizer)
+    metrics = get_metrics(device)
+
+    # Initialize history tracking
+    history = {
+        "train_loss": [],
+        "val_loss": [],
+        "val_iou": [],
+        "val_f1": [],
+        "val_precision": [],
+        "val_recall": [],
+    }
+
+    # Training loop across epochs
+    for epoch in range(1, epochs + 1):
+        # ===== Training Phase =====
+        model.train()
+        train_loss_accum = 0.0
+        n_batches = 0
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch}/{epochs}")
+
+        for images, masks in progress_bar:
             images, masks = images.to(device), masks.to(device)
+
+            # Forward pass
             preds = model(images)
+            loss = loss_fn(preds, masks)
 
-            loss = combined_loss(preds, masks)
-            val_loss += loss.item() * images.size(0)
+            # Backward pass
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
-            preds_sigmoid = torch.sigmoid(preds)
-            val_iou += iou_metric(preds_sigmoid, masks.int()
-                                  ).item() * images.size(0)
-            val_f1 += f1_metric(preds_sigmoid, masks.int()
-                                ).item() * images.size(0)
-            val_precision += precision_metric(preds_sigmoid,
-                                              masks.int()).item() * images.size(0)
-            val_recall += recall_metric(preds_sigmoid,
-                                        masks.int()).item() * images.size(0)
+            # Track loss
+            train_loss_accum += loss.item()
+            n_batches += 1
+            progress_bar.set_postfix(
+                {"train_loss": f"{train_loss_accum / n_batches:.4f}"}
+            )
 
-    val_loss /= len(val_loader.dataset)
-    val_iou /= len(val_loader.dataset)
-    val_f1 /= len(val_loader.dataset)
-    val_precision /= len(val_loader.dataset)
-    val_recall /= len(val_loader.dataset)
+        train_loss = train_loss_accum / max(1, n_batches)
 
-    # Store metrics in history
-    history['train_loss'].append(train_loss)
-    history['val_loss'].append(val_loss)
-    history['val_iou'].append(val_iou)
-    history['val_f1'].append(val_f1)
-    history['val_precision'].append(val_precision)
-    history['val_recall'].append(val_recall)
+        # ===== Validation Phase =====
+        model.eval()
+        val_loss_accum = 0.0
+        n_val_batches = 0
 
-    # Learning rate scheduling
-    scheduler.step(val_loss)
+        # Reset metrics from previous epoch
+        for m in metrics.values():
+            if hasattr(m, "reset"):
+                m.reset()
 
-    print(f"Train Loss: {train_loss:.4f}")
-    print(
-        f"Val Loss:   {val_loss:.4f} | IoU: {val_iou:.4f} | F1: {val_f1:.4f}")
-    print(f"Precision:  {val_precision:.4f} | Recall: {val_recall:.4f}")
+        with torch.no_grad():
+            for images, masks in val_loader:
+                images, masks = images.to(device), masks.to(device)
 
-    # Warning if model is predicting all zeros
-    if val_recall < 0.1:
-        print("⚠️  WARNING: Very low recall - model may be predicting mostly zeros!")
+                # Forward pass
+                preds = model(images)
+                loss = loss_fn(preds, masks)
+                val_loss_accum += loss.item()
+                n_val_batches += 1
 
-print("\n✓ Training complete!")
+                # Convert logits to binary predictions
+                probs = torch.sigmoid(preds)
+                preds_bin = (probs > 0.5).int()
 
-# Save model
-torch.save(model.state_dict(),
-           "../trained_models/path_segmentation_model_lr0.0005.pth")
-print("Model saved!")
+                # Update metrics (handle different tensor shapes)
+                for name, metric in metrics.items():
+                    try:
+                        metric(preds_bin, masks.int())
+                    except Exception:
+                        # Handle case where metric expects shape without channel dimension
+                        metric(preds_bin.squeeze(1), masks.squeeze(1).int())
+
+        # Compute epoch metrics
+        val_loss = val_loss_accum / max(1, n_val_batches)
+        val_iou = metrics["iou"].compute().item()
+        val_f1 = metrics["f1"].compute().item()
+        val_precision = metrics["precision"].compute().item()
+        val_recall = metrics["recall"].compute().item()
+
+        # Reset metrics after computation
+        for m in metrics.values():
+            if hasattr(m, "reset"):
+                m.reset()
+
+        # Update learning rate based on validation loss
+        scheduler.step(val_loss)
+
+        # Record history
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["val_iou"].append(val_iou)
+        history["val_f1"].append(val_f1)
+        history["val_precision"].append(val_precision)
+        history["val_recall"].append(val_recall)
+
+        # Print epoch summary
+        print(
+            f"Epoch {epoch}/{epochs} — "
+            f"Train Loss: {train_loss:.4f} | "
+            f"Val Loss: {val_loss:.4f} | "
+            f"IoU: {val_iou:.4f} | "
+            f"F1: {val_f1:.4f}"
+        )
+
+    print(f"\n✓ Training complete! ({epochs} epochs)")
+    print("To visualize results, run: python scripts/03_visualize.py")
+
+    return model, history
