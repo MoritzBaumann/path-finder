@@ -89,9 +89,9 @@ def rasterize_labels_for_tiff(
             )
 
             path_pixels = np.sum(label_mask)
-            coverage_pct = (path_pixels / label_mask.size) * 100
+            pixel_coverage = (path_pixels / label_mask.size) * 100
             print(
-                f"  ✓ Mask: {label_mask.shape}, {path_pixels:,} path pixels ({coverage_pct:.2f}% coverage)"
+                f"  ✓  Mask: {label_mask.shape}, {path_pixels:,} path pixels ({round(pixel_coverage, 2)}% coverage)"
             )
 
     except Exception as e:
@@ -119,15 +119,19 @@ def dilate_path_pixels(mask: np.ndarray, pixel_dilation: int) -> np.ndarray:
         Dilated binary mask of the same shape as the input.
     """
     if pixel_dilation <= 0:
-        print("  ⊘ No dilation applied")
+        print("  ⊘  No dilation applied")
         return mask
 
-    print("  🛤 Broadening path using distance-based dilation...")
+    print("  🛤  Broadening path using distance-based dilation...")
     # Compute Euclidean distance from each background pixel to nearest foreground pixel
     dist = cv2.distanceTransform(1 - mask, distanceType=cv2.DIST_L2, maskSize=5)
     # Pixels within radius `pixel_dilation` of a path become 1
     mask_dilated = (dist <= pixel_dilation).astype(np.uint8)
-    print(f"  ✅ Dilated paths: {pixel_dilation}px radius using distance transform")
+    path_pixels = np.sum(mask_dilated)
+    pixel_coverage = (path_pixels / mask_dilated.size) * 100
+    print(
+        f"  ✅  Dilated paths: {pixel_dilation}px radius (→ {round(pixel_coverage, 2)}% coverage)"
+    )
     return mask_dilated
 
 
@@ -187,10 +191,10 @@ def extract_and_save_tiles(
         img_width, img_height = src.width, src.height
 
         print(
-            f"  📊 Source: {img_width}W × {img_height}H, {src.count} bands, CRS={src.crs}"
+            f"  📊  Source Image: {img_width}W × {img_height}H, {src.count} bands, CRS={src.crs}"
         )
         print(
-            f"  ✂️  Extracting {tile_size}×{tile_size} tiles → downscaling to {target_size}×{target_size}"
+            f"  ✂️  Extracting {tile_size}×{tile_size}px tiles → downscaling to {target_size}×{target_size}px"
         )
 
         tile_count = 0
@@ -314,7 +318,7 @@ def process_geotiffs_to_tiles(
 
     # Summary
     print(f"\n{'=' * 60}")
-    print("✓ PROCESSING COMPLETE")
+    print("✓  PROCESSING COMPLETE")
     print(f"{'=' * 60}")
     print(f"  Processed: {processed_count}/{len(tiff_files)} GeoTIFFs")
     print(f"  Failed: {failed_count}")
@@ -364,6 +368,19 @@ class TileDataset(Dataset):
 
         img_tensor = torch.tensor(img, dtype=torch.float32) / 255.0
         mask_tensor = torch.tensor(mask, dtype=torch.float32).unsqueeze(0)
+
+        # # Random flips
+        # if random.random() > 0.5:
+        #     img = torch.flip(img, [-1])  # horizontal flip
+        #     mask = torch.flip(mask, [-1])
+        # if random.random() > 0.5:
+        #     img = torch.flip(img, [-2])  # vertical flip
+        #     mask = torch.flip(mask, [-2])
+
+        # # Random rotations (90° increments for exact transforms)
+        # k = random.randint(0, 3)
+        # img = torch.rot90(img, k, [-2, -1])
+        # mask = torch.rot90(mask, k, [-2, -1])
 
         if self.normalize:
             img_tensor[:3] = (img_tensor[:3] - self.mean_rgb) / self.std_rgb

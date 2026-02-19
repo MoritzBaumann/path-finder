@@ -39,7 +39,7 @@ def get_losses() -> Callable[[torch.Tensor, torch.Tensor], torch.Tensor]:
     to stabilize training. Expects logits as predictions and binary {0,1} targets.
     """
     dice_loss = smp.losses.DiceLoss(mode="binary")
-    focal_loss = smp.losses.FocalLoss(mode="binary", alpha=0.25, gamma=2.0)
+    focal_loss = smp.losses.FocalLoss(mode="binary", alpha=0.75, gamma=2.0)
 
     def combined_loss(preds: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         # preds: logits, targets: binary {0,1}
