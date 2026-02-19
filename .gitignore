@@ -1,27 +1,62 @@
-# macOS
-.DS_Store
+# ----- Data & Outputs -----
+data/*
+!data/.gitkeep
+outputs/*
+!outputs/.gitkeep
 
-# Python
+# ----- Python -----
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+site-packages/
 
-# Virtual environments
+# ----- Virtual environments -----
 .venv/
 venv/
 env/
 
-# Editors/IDE
+# ----- uv -----
+# uv.lock is intentionally committed, so nothing to ignore here
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ----- Geospatial / rasterio -----
+*.tif
+*.tiff
+*.geotiff
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.gpkg
+
+# ----- Model artifacts -----
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+
+# ----- OS -----
+.DS_Store
+Thumbs.db
+
+# ----- IDEs -----
 .vscode/
 .idea/
+*.code-workspace
 
-# Jupyter
-*.ipynb
-.ipynb_checkpoints
-
-# Data and outputs (keep out of git)
-data/
-outputs/
-
-# Local secrets
+# ----- Misc -----
+*.log
+*.tmp
 .env
-local_settings.py
+.env.*
