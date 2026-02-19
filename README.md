@@ -1,102 +1,56 @@
 # Path-Finder — Coastal Path Detection
 
-<!-- TABLE OF CONTENTS -->
-<details open="open">
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#requirements">System requirements</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#authors">Authors</a></li>
-    <li><a href="#acknowledgements">Acknowledgements</a></li>
-  </ol>
-</details>
+A PyTorch-based pipeline for detecting coastline paths from geospatial (GeoTIFF) imagery. The goal is to produce pixel-wise segmentation masks that help keep mapping applications up to date and improve hiker safety.
 
+## Features
 
+- Preprocessing of large GeoTIFF rasters into tiles
+- Dataset building for segmentation tasks
+- Model training and inference with PyTorch
+- Visualization of predicted coastline/path masks
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+## Project Structure
+```
+path-finder/
+├── config/        # Configuration files
+├── notebooks/     # Exploratory and analysis notebooks
+├── scripts/       # Standalone scripts (preprocessing, inference, etc.)
+├── src/           # Core source code
+├── pyproject.toml
+└── uv.lock
+```
 
-The goal of this project is to create a mapping tool for coastal hiking paths. A pretrained image learning model (UNet) is used to identify coastline paths from geospatial imagery.
+## Requirements
 
-The underlying idea is to use this tool to keep mapping apps up to date and thereby increase hikers' safety along coastal pathways. It originates from Yohan Cobac and Laura Dréan, who initiated this project during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html).
+- Python >= 3.13
+- macOS or Linux
+- GPU recommended for training
 
-The centerpiece of the project is a pipeline consisting of 5 different steps:
-- `01_preprocess`: During preprocessing images are tiled and downscaled and hiking paths (labels) are rasterized.
-- `02_train`: Model training trains a pretrained UNet model on the tile/mask pairs.
-- `03_visualize`: Visualization creates graphs of training metrics and preprocessed images.
-- `04_evaluate`: Tests the model performance on unseen test data.
-- `05_predict`: Makes hiking path predictions on new, hitherto unseen images.
+## Installation
 
+Using [uv](https://github.com/astral-sh/uv) (recommended):
+```bash
+uv sync
+```
 
-<!-- GETTING STARTED -->
-## Getting Started
+Or with pip:
+```bash
+pip install torch rasterio
+```
 
-### System requirements
-
-   - macOS or Linux (development tested on macOS)
-   - Python >=3.13
-   - GPU recommended for training, but not needed
-
-### Installation
-
-1. Clone the repo
-   ```sh
-   git clone https://github.com/MoritzBaumann/path-finder.git
-   ```
-2. Setup (and activate) your environment (example with `uv`)
-  ```sh
-  uv venv
-  ```
-3. Install dependencies (example with `uv`)
-   - `uv sync`
-   - -> or install core packages manually using `pip`:
-   - `pip install torch rasterio ...`
-
-<!-- USAGE EXAMPLES -->
 ## Usage
 
-How this project can be used, to be filled in ...
+1. **Prepare data** — Place your GeoTIFF files in the appropriate data directory and run the preprocessing script to tile them.
+2. **Train** — Use the training script or notebook to train a segmentation model on the prepared tiles.
+3. **Infer** — Run inference on new imagery to produce path/coastline masks.
+4. **Visualize** — Use the visualization tools to inspect predicted masks against the source imagery.
 
-<!-- CONTRIBUTING -->
-## Contributing
+> Detailed usage instructions will be added as the project matures.
 
-Contributions are what make the open source community such an amazing place to be learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-
-<!-- LICENSE -->
 ## License
 
-Distributed under the MIT License.
+[MIT](LICENSE)
 
-
-<!-- Authors -->
-## Authors
-
-Moritz Baumann - [@LinkedIn](https://www.linkedin.com/in/moritz-baumann/)
-
-Project Link: [https://github.com/MoritzBaumann/path-finder](https://github.com/MoritzBaumann/path-finder)
-
-
-<!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
 
 This project was started during the [Ocean Hackathon 2025](https://www.campusmer.fr/home-4185-0-0-0.html), and the initial idea came from Yohan Cobac and Laura Dréan.
-
-* License: [MIT License](https://choosealicense.com/licenses/mit/)
